@@ -2,13 +2,8 @@ __pycache__/
 *.pyc
 .venv/
 
-# runtime config files with secrets
-bots.json
+# local config (secrets)
 tokens.txt
 message.txt
-button_text.txt
 button_url.txt
-01_tokens.txt
-02_start_message.txt
-03_button_text.txt
-04_button_url.txt
+button_text.txt

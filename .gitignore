@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+
+# runtime config files with secrets
+bots.json
+tokens.txt
+message.txt
+button_text.txt
+button_url.txt

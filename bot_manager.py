@@ -2,16 +2,22 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Iterable, List
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-TOKENS_PATH = Path("tokens.txt")
-MESSAGE_PATH = Path("message.txt")
-BUTTON_TEXT_PATH = Path("button_text.txt")
-BUTTON_URL_PATH = Path("button_url.txt")
+DEFAULT_START_MESSAGE = (
+    "👋 Добро пожаловать! Мы запустили новую версию бота.\n\n"
+    "👇 Перейдите по кнопке ниже."
+)
+DEFAULT_BUTTON_TEXT = "Перейти"
+
+TOKENS_FILES = [Path("01_tokens.txt"), Path("tokens.txt")]
+MESSAGE_FILES = [Path("02_start_message.txt"), Path("message.txt")]
+BUTTON_TEXT_FILES = [Path("03_button_text.txt"), Path("button_text.txt")]
+BUTTON_URL_FILES = [Path("04_button_url.txt"), Path("button_url.txt")]
 
 
 @dataclass
@@ -25,49 +31,70 @@ class RuntimeConfig:
 class FileConfigStore:
     def __init__(
         self,
-        tokens_path: Path,
-        message_path: Path,
-        button_text_path: Path,
-        button_url_path: Path,
+        tokens_files: List[Path],
+        message_files: List[Path],
+        button_text_files: List[Path],
+        button_url_files: List[Path],
     ):
-        self.tokens_path = tokens_path
-        self.message_path = message_path
-        self.button_text_path = button_text_path
-        self.button_url_path = button_url_path
+        self.tokens_files = tokens_files
+        self.message_files = message_files
+        self.button_text_files = button_text_files
+        self.button_url_files = button_url_files
         self._mtimes = {}
         self._config: RuntimeConfig | None = None
 
+    def _active_path(self, candidates: Iterable[Path]) -> Path:
+        candidates = list(candidates)
+        for path in candidates:
+            if path.exists():
+                return path
+        return candidates[0]
+
     def _read_tokens(self) -> List[str]:
-        if not self.tokens_path.exists():
-            raise FileNotFoundError(
-                f"Не найден файл {self.tokens_path}. Создайте его и добавьте токены (каждый токен с новой строки)."
+        tokens_path = self._active_path(self.tokens_files)
+        if not tokens_path.exists():
+            tokens_path.write_text(
+                "# Вставьте сюда токены ботов: 1 токен = 1 строка\n"
+                "# Пример:\n"
+                "# 123456:ABCDEF_your_token\n",
+                encoding="utf-8",
+            )
+            raise ValueError(
+                f"Создан файл {tokens_path}. Вставьте в него токены и запустите снова."
             )
 
         tokens = [
             line.strip()
-            for line in self.tokens_path.read_text(encoding="utf-8").splitlines()
+            for line in tokens_path.read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.strip().startswith("#")
         ]
 
         if not tokens:
-            raise ValueError("Файл tokens.txt пустой. Добавьте хотя бы 1 токен.")
+            raise ValueError(
+                f"Файл {tokens_path} пустой. Добавьте минимум 1 токен (по одному на строку)."
+            )
 
         return tokens
 
-    def _read_text_file(self, path: Path, *, default: str = "") -> str:
+    def _read_text_or_default(self, files: List[Path], default: str) -> str:
+        path = self._active_path(files)
         if not path.exists():
+            path.write_text(default, encoding="utf-8")
             return default
-        return path.read_text(encoding="utf-8").strip()
 
-    def _is_changed(self) -> bool:
-        files = [
-            self.tokens_path,
-            self.message_path,
-            self.button_text_path,
-            self.button_url_path,
+        text = path.read_text(encoding="utf-8").strip()
+        return text or default
+
+    def _tracked_paths(self) -> List[Path]:
+        return [
+            self._active_path(self.tokens_files),
+            self._active_path(self.message_files),
+            self._active_path(self.button_text_files),
+            self._active_path(self.button_url_files),
         ]
 
-        for file in files:
+    def _is_changed(self) -> bool:
+        for file in self._tracked_paths():
             current_mtime = file.stat().st_mtime if file.exists() else -1.0
             if self._mtimes.get(file) != current_mtime:
                 return True
@@ -79,14 +106,13 @@ class FileConfigStore:
             return
 
         tokens = self._read_tokens()
-        message_text = self._read_text_file(self.message_path)
-        if not message_text:
-            raise ValueError(
-                "Файл message.txt пустой или отсутствует. Добавьте текст, который будет отправляться на /start."
-            )
-
-        button_text = self._read_text_file(self.button_text_path, default="Перейти")
-        button_url = self._read_text_file(self.button_url_path)
+        message_text = self._read_text_or_default(
+            self.message_files, DEFAULT_START_MESSAGE
+        )
+        button_text = self._read_text_or_default(
+            self.button_text_files, DEFAULT_BUTTON_TEXT
+        )
+        button_url = self._read_text_or_default(self.button_url_files, "")
 
         self._config = RuntimeConfig(
             tokens=tokens,
@@ -95,15 +121,10 @@ class FileConfigStore:
             button_url=button_url,
         )
 
-        for file in [
-            self.tokens_path,
-            self.message_path,
-            self.button_text_path,
-            self.button_url_path,
-        ]:
+        for file in self._tracked_paths():
             self._mtimes[file] = file.stat().st_mtime if file.exists() else -1.0
 
-        logging.info("Конфиг перезагружен: %s токенов", len(tokens))
+        logging.info("Конфиг загружен: %s ботов", len(tokens))
 
     def get(self) -> RuntimeConfig:
         self.load_if_changed()
@@ -113,10 +134,10 @@ class FileConfigStore:
 
 
 store = FileConfigStore(
-    TOKENS_PATH,
-    MESSAGE_PATH,
-    BUTTON_TEXT_PATH,
-    BUTTON_URL_PATH,
+    TOKENS_FILES,
+    MESSAGE_FILES,
+    BUTTON_TEXT_FILES,
+    BUTTON_URL_FILES,
 )
 dp = Dispatcher()
 

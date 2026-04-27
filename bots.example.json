@@ -1,0 +1,18 @@
+{
+  "bots": [
+    {
+      "name": "bot_1",
+      "token": "123456:YOUR_BOT_TOKEN",
+      "message_text": "👋 Добро пожаловать! Мы запустили новую версию бота.\n\n👇 Перейдите по кнопке ниже.",
+      "button_text": "Перейти",
+      "button_url": "https://example.com"
+    },
+    {
+      "name": "bot_2",
+      "token": "987654:SECOND_BOT_TOKEN",
+      "message_text": "👋 Привет! Это второй бот.",
+      "button_text": "Открыть",
+      "button_url": "https://example.org"
+    }
+  ]
+}
